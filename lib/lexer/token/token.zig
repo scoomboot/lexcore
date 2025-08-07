@@ -9,8 +9,7 @@
 // ╔══════════════════════════════════════ PACK ══════════════════════════════════════╗
 
     const std = @import("std");
-    const lexer = @import("../../lexer.zig");
-    const position = lexer.position;
+    const position = @import("../position/position.zig");
 
 // ╚══════════════════════════════════════════════════════════════════════════════════════╝
 

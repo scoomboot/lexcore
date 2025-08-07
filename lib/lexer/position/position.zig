@@ -252,8 +252,8 @@
         
         /// Restore last marked position
         pub fn restore(self: *PositionTracker) !void {
-            if (self.marks.popOrNull()) |pos| {
-                self.current = pos;
+            if (self.marks.items.len > 0) {
+                self.current = self.marks.pop();
             } else {
                 return error.NoMarkToRestore;
             }

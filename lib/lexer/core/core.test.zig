@@ -67,7 +67,7 @@
     }
     
     test "unit: LexerCapabilities: setting flags" {
-        var caps = core.LexerCapabilities{
+        const caps = core.LexerCapabilities{
             .supports_unicode = true,
             .supports_lookahead = true,
             .supports_error_recovery = true,

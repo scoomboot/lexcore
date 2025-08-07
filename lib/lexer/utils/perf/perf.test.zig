@@ -105,23 +105,19 @@
         var bench = perf.Benchmark.init(testing.allocator, "setup_teardown_bench");
         defer bench.deinit();
         
-        var setup_called: usize = 0;
-        var teardown_called: usize = 0;
-        
-        const Context = struct {
-            setup_count: *usize,
-            teardown_count: *usize,
+        // Use a global-like structure for this test
+        const TestContext = struct {
+            var setup_called: usize = 0;
+            var teardown_called: usize = 0;
         };
         
-        var ctx = Context{
-            .setup_count = &setup_called,
-            .teardown_count = &teardown_called,
-        };
+        // Reset counters
+        TestContext.setup_called = 0;
+        TestContext.teardown_called = 0;
         
         const setup_fn = struct {
             fn setup() !void {
-                _ = &ctx;
-                setup_called += 1;
+                TestContext.setup_called += 1;
             }
         }.setup;
         
@@ -134,20 +130,19 @@
         
         const teardown_fn = struct {
             fn teardown() !void {
-                _ = &ctx;
-                teardown_called += 1;
+                TestContext.teardown_called += 1;
             }
         }.teardown;
         
         const iterations = 5;
         _ = try bench.run(iterations, setup_fn, bench_fn, teardown_fn);
         
-        try testing.expect(setup_called == iterations);
-        try testing.expect(teardown_called == iterations);
+        try testing.expect(TestContext.setup_called == iterations);
+        try testing.expect(TestContext.teardown_called == iterations);
     }
     
     test "unit: MemoryTracker: initialization" {
-        var tracker = perf.MemoryTracker.init(testing.allocator);
+        const tracker = perf.MemoryTracker.init(testing.allocator);
         
         try testing.expect(tracker.allocations == 0);
         try testing.expect(tracker.deallocations == 0);

@@ -11,8 +11,7 @@
     const std = @import("std");
     const testing = std.testing;
     const token = @import("token.zig");
-    const lexer = @import("../../lexer.zig");
-    const position = lexer.position;
+    const position = @import("../position/position.zig");
 
 // ╚══════════════════════════════════════════════════════════════════════════════════════╝
 
@@ -231,7 +230,7 @@
         while (i < iterations) : (i += 1) {
             // Test owned token creation and cleanup
             const lexeme = try testing.allocator.alloc(u8, 100);
-            @memcpy(lexeme, "stress_test_lexeme_with_long_content_to_test_memory_management_properly_under_load"[0..84]);
+            @memcpy(lexeme, "stress_test_lexeme_with_long_content_to_test_memory_management_properly_under_load"[0..82]);
             
             var tok = token.Token.initOwned(
                 testing.allocator,

@@ -11,8 +11,7 @@
     const std = @import("std");
     const testing = std.testing;
     const err_mod = @import("error.zig");
-    const lexer = @import("../../lexer.zig");
-    const position = lexer.position;
+    const position = @import("../position/position.zig");
 
 // ╚══════════════════════════════════════════════════════════════════════════════════════╝
 
