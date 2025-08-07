@@ -1,0 +1,60 @@
+# Zig build artifacts
+zig-cache/
+zig-out/
+.zig-cache/
+
+# Build directories
+build/
+build-*/
+/release/
+/debug/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+*.sublime-*
+
+# Claude AI
+.claude/
+
+# Testing artifacts
+*.test
+test-results/
+coverage/
+
+# Dependency directories
+.zigmod/
+deps/
+
+# Generated documentation
+docs/build/
+docs/generated/
+
+# Binary files
+*.exe
+*.o
+*.a
+*.lib
+*.so
+*.dylib
+*.dll
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+*.tmp
+tmp/
+temp/
+
+# OS specific
+Thumbs.db
+.directory
+
+# Project specific
+issues/
