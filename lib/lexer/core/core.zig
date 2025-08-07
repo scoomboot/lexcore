@@ -21,10 +21,10 @@
     /// Core lexer interface defining common behavior for all lexer implementations
     pub const LexerCore = struct {
         /// Function pointer types for lexer operations
-        pub const NextTokenFn = *const fn (self: *anyopaque) anyerror!?token.Token;
+        pub const NextTokenFn = *const fn (self: *anyopaque) anyerror!?token.LegacyToken;
         pub const SetInputFn = *const fn (self: *anyopaque, input: []const u8) anyerror!void;
         pub const ResetFn = *const fn (self: *anyopaque) void;
-        pub const GetPositionFn = *const fn (self: *const anyopaque) position.Position;
+        pub const GetPositionFn = *const fn (self: *const anyopaque) position.SourcePosition;
         
         /// Virtual function table for polymorphic lexer behavior
         pub const VTable = struct {
@@ -38,7 +38,7 @@
         vtable: *const VTable,
         
         /// Get next token from the lexer
-        pub fn nextToken(self: LexerCore) !?token.Token {
+        pub fn nextToken(self: LexerCore) !?token.LegacyToken {
             return self.vtable.nextToken(self.impl);
         }
         
@@ -53,7 +53,7 @@
         }
         
         /// Get current position in source
-        pub fn getPosition(self: LexerCore) position.Position {
+        pub fn getPosition(self: LexerCore) position.SourcePosition {
             return self.vtable.getPosition(self.impl);
         }
     };
@@ -115,5 +115,10 @@
         peak_memory_usage: usize = 0,
         lexing_time_ns: u64 = 0,
     };
+    
+    // Import test files
+    test {
+        _ = @import("core.test.zig");
+    }
 
 // ╚══════════════════════════════════════════════════════════════════════════════════════╝

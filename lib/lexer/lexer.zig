@@ -17,6 +17,22 @@
 
 // ╚══════════════════════════════════════════════════════════════════════════════════════╝
 
+// ╔══════════════════════════════════════ RESOURCE MANAGEMENT ══════════════════════════════════════╗
+
+    // Resource Management Pattern:
+    // 
+    // This library follows a consistent pattern for resource management:
+    // 
+    // 1. Components that allocate memory provide init(allocator) and deinit() methods
+    // 2. Ownership is explicit through documentation or flags (e.g., Token.owns_lexeme)
+    // 3. Factory functions (create/destroy) manage heap-allocated instances
+    // 4. All cleanup happens in deinit() methods, called in proper order
+    // 5. Tests use std.testing.allocator for automatic leak detection
+    // 
+    // This simple pattern is sufficient for a lexer library and avoids unnecessary abstraction.
+
+// ╚══════════════════════════════════════════════════════════════════════════════════════════╝
+
 // ╔══════════════════════════════════════ CORE ══════════════════════════════════════╗
 
     /// Main lexer structure implementing the core lexer interface
@@ -26,8 +42,8 @@
     pub const Lexer = struct {
         allocator: std.mem.Allocator,
         input_buffer: buffer.Buffer,
-        current_position: position.Position,
-        tokens: std.ArrayList(token.Token),
+        current_position: position.SourcePosition,
+        tokens: std.ArrayList(token.LegacyToken),
         errors: std.ArrayList(@"error".LexerError),
         
         /// Initialize a new lexer instance.
@@ -38,8 +54,8 @@
             return Lexer{
                 .allocator = allocator,
                 .input_buffer = try buffer.Buffer.init(allocator),
-                .current_position = position.Position.init(),
-                .tokens = std.ArrayList(token.Token).init(allocator),
+                .current_position = position.SourcePosition.init(),
+                .tokens = std.ArrayList(token.LegacyToken).init(allocator),
                 .errors = std.ArrayList(@"error".LexerError).init(allocator),
             };
         }
@@ -96,7 +112,7 @@
         /// __Return__
         ///
         /// - Next Token or null if end of input, error if processing fails
-        pub fn nextToken(self: *Lexer) !?token.Token {
+        pub fn nextToken(self: *Lexer) !?token.LegacyToken {
             // Placeholder implementation
             if (self.input_buffer.isAtEnd()) {
                 return null;
@@ -118,7 +134,7 @@
             if (lexeme.items.len > 0) {
                 // Create token with owned lexeme
                 const duped_lexeme = try self.allocator.dupe(u8, lexeme.items);
-                return token.Token.initOwned(
+                return token.LegacyToken.initOwned(
                     self.allocator,
                     token.TokenType.Identifier,
                     duped_lexeme,
@@ -144,7 +160,7 @@
         pub fn reset(self: *Lexer) void {
             // Clear tokens, freeing lexemes
             for (self.tokens.items) |*tok| {
-                tok.deinit(self.allocator);
+                tok.deinit();
             }
             self.tokens.clearRetainingCapacity();
             
@@ -166,7 +182,7 @@
         /// __Return__
         ///
         /// - Slice of all tokens or error if tokenization fails
-        pub fn tokenize(self: *Lexer) ![]token.Token {
+        pub fn tokenize(self: *Lexer) ![]token.LegacyToken {
             // Clear existing tokens, freeing their lexemes
             for (self.tokens.items) |*tok| {
                 tok.deinit();
@@ -217,6 +233,11 @@
         const allocator = lexer.allocator;
         lexer.deinit();
         allocator.destroy(lexer);
+    }
+    
+    // Import test files
+    test {
+        _ = @import("lexer.test.zig");
     }
 
 // ╚══════════════════════════════════════════════════════════════════════════════════════╝

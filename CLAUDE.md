@@ -95,6 +95,30 @@ test "unit: Parser: handles empty input gracefully" {
 
 ## Testing Requirements
 
+### Critical: Test Discovery Pattern
+**All module files MUST import their test files explicitly** following the Super-ZIG/io pattern:
+
+```zig
+// At the end of each module file (e.g., buffer.zig), before the closing section border:
+test {
+    _ = @import("buffer.test.zig");
+}
+```
+
+**Why this is critical**: Without these imports, tests will NOT be discovered by `zig build test`. We discovered that 51% of our tests (64 out of 125) were not running because modules didn't import their test files.
+
+### Test Organization
+- Place test files adjacent to implementation: `module.zig` and `module.test.zig`
+- For multiple test files per module, import all of them:
+  ```zig
+  test {
+      _ = @import("token.test.zig");
+      _ = @import("zero_copy_test.zig");
+      _ = @import("memory_test.zig");
+  }
+  ```
+
+### Test Requirements
 - Every public function needs unit tests
 - Integration tests for component interactions
 - Use `std.testing.allocator` for memory-related tests

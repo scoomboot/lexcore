@@ -14,14 +14,17 @@
 
 // ╔══════════════════════════════════════ CORE ══════════════════════════════════════╗
 
-    /// Position within source text
-    pub const Position = struct {
-        line: usize,
-        column: usize,
+    /// Source position within text
+    /// 
+    /// Represents a specific location in source code with line, column, and byte offset.
+    /// Lines and columns are 1-indexed for human readability, while offset is 0-indexed.
+    pub const SourcePosition = struct {
+        line: u32,
+        column: u32,
         offset: usize,
         
         /// Create initial position (1:1:0)
-        pub fn init() Position {
+        pub fn init() SourcePosition {
             return .{
                 .line = 1,
                 .column = 1,
@@ -30,7 +33,7 @@
         }
         
         /// Create position with specific values
-        pub fn initWithValues(line: usize, column: usize, offset: usize) Position {
+        pub fn initWithValues(line: u32, column: u32, offset: usize) SourcePosition {
             return .{
                 .line = line,
                 .column = column,
@@ -39,7 +42,7 @@
         }
         
         /// Advance position by one character
-        pub fn advance(self: *Position, char: u8) void {
+        pub fn advance(self: *SourcePosition, char: u8) void {
             self.offset += 1;
             if (char == '\n') {
                 self.line += 1;
@@ -50,45 +53,45 @@
         }
         
         /// Advance position by multiple characters
-        pub fn advanceString(self: *Position, text: []const u8) void {
+        pub fn advanceString(self: *SourcePosition, text: []const u8) void {
             for (text) |char| {
                 self.advance(char);
             }
         }
         
         /// Move to next line
-        pub fn nextLine(self: *Position) void {
+        pub fn nextLine(self: *SourcePosition) void {
             self.line += 1;
             self.column = 1;
             self.offset += 1;
         }
         
         /// Move to next column
-        pub fn nextColumn(self: *Position) void {
+        pub fn nextColumn(self: *SourcePosition) void {
             self.column += 1;
             self.offset += 1;
         }
         
         /// Compare positions
-        pub fn eql(self: Position, other: Position) bool {
+        pub fn eql(self: SourcePosition, other: SourcePosition) bool {
             return self.line == other.line and
                    self.column == other.column and
                    self.offset == other.offset;
         }
         
         /// Check if this position comes before another
-        pub fn isBefore(self: Position, other: Position) bool {
+        pub fn isBefore(self: SourcePosition, other: SourcePosition) bool {
             return self.offset < other.offset;
         }
         
         /// Check if this position comes after another
-        pub fn isAfter(self: Position, other: Position) bool {
+        pub fn isAfter(self: SourcePosition, other: SourcePosition) bool {
             return self.offset > other.offset;
         }
         
         /// Format position for display
         pub fn format(
-            self: Position,
+            self: SourcePosition,
             comptime fmt: []const u8,
             options: std.fmt.FormatOptions,
             writer: anytype,
@@ -101,11 +104,11 @@
     
     /// Range between two positions
     pub const Range = struct {
-        start: Position,
-        end: Position,
+        start: SourcePosition,
+        end: SourcePosition,
         
         /// Create a new range
-        pub fn init(start: Position, end: Position) Range {
+        pub fn init(start: SourcePosition, end: SourcePosition) Range {
             return .{
                 .start = start,
                 .end = end,
@@ -113,7 +116,7 @@
         }
         
         /// Create a range from a single position
-        pub fn fromPosition(pos: Position) Range {
+        pub fn fromPosition(pos: SourcePosition) Range {
             return .{
                 .start = pos,
                 .end = pos,
@@ -121,7 +124,7 @@
         }
         
         /// Check if range contains a position
-        pub fn contains(self: Range, pos: Position) bool {
+        pub fn contains(self: Range, pos: SourcePosition) bool {
             return !pos.isBefore(self.start) and !pos.isAfter(self.end);
         }
         
@@ -253,7 +256,7 @@
         /// Restore last marked position
         pub fn restore(self: *PositionTracker) !void {
             if (self.marks.items.len > 0) {
-                self.current = self.marks.pop();
+                self.current = self.marks.pop().?;
             } else {
                 return error.NoMarkToRestore;
             }
@@ -268,5 +271,13 @@
             return Range.init(mark_pos, self.current);
         }
     };
+    
+    // Legacy alias for backward compatibility during transition
+    pub const Position = SourcePosition;
+    
+    // Import test files
+    test {
+        _ = @import("position.test.zig");
+    }
 
 // ╚══════════════════════════════════════════════════════════════════════════════════════╝

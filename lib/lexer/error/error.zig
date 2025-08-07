@@ -238,5 +238,10 @@
         errors: usize,
         fatals: usize,
     };
+    
+    // Import test files
+    test {
+        _ = @import("error.test.zig");
+    }
 
 // ╚══════════════════════════════════════════════════════════════════════════════════════╝

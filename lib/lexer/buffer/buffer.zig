@@ -201,5 +201,10 @@
             return self.capacity - self.count;
         }
     };
+    
+    // Import test files
+    test {
+        _ = @import("buffer.test.zig");
+    }
 
 // ╚══════════════════════════════════════════════════════════════════════════════════════╝
