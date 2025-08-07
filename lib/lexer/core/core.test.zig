@@ -11,8 +11,9 @@
     const std = @import("std");
     const testing = std.testing;
     const core = @import("core.zig");
-    const token = @import("../token/token.zig");
-    const position = @import("../position/position.zig");
+    const lexer = @import("../../lexer.zig");
+    const token = lexer.token;
+    const position = lexer.position;
 
 // ╚══════════════════════════════════════════════════════════════════════════════════════╝
 

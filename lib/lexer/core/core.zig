@@ -9,9 +9,10 @@
 // ╔══════════════════════════════════════ PACK ══════════════════════════════════════╗
 
     const std = @import("std");
-    const token = @import("../token/token.zig");
-    const position = @import("../position/position.zig");
-    const @"error" = @import("../error/error.zig");
+    const lexer = @import("../../lexer.zig");
+    const token = lexer.token;
+    const position = lexer.position;
+    const @"error" = lexer.@"error";
 
 // ╚══════════════════════════════════════════════════════════════════════════════════════╝
 
