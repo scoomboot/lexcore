@@ -20,7 +20,7 @@ Add `lexcore` to your `build.zig.zon`:
 ```zig
 .dependencies = .{
     .lexcore = .{
-        .url = "https://github.com/emoessner/lexcore/archive/refs/tags/v0.1.0.tar.gz",
+        .url = "https://github.com/scoomboot/lexcore/archive/refs/tags/v0.1.0.tar.gz",
         .hash = "...", // Use `zig fetch` to get the hash
     },
 },
@@ -127,7 +127,7 @@ Run tests with: `zig build test`
 
 ## Documentation
 
-- [API Documentation](https://emoessner.github.io/lexcore)
+- [API Documentation](https://scoomboot.github.io/lexcore)
 - [Maysara Code Style Guide](docs/MCS.md)
 - [Test Naming Conventions](docs/TEST_NAMING_CONVENTIONS.md)
 - [Architecture Overview](docs/LEXER_LIBRARY_PLAN.md)
@@ -138,10 +138,10 @@ MIT License - see [LICENSE](LICENSE) file for details.
 
 ## Author
 
-Developed with ❤️ by [emoessner](https://github.com/emoessner)
+Developed with ❤️ by [scoomboot](https://github.com/scoomboot)
 
 ## Links
 
-- **Repository**: https://github.com/emoessner/lexcore
-- **Documentation**: https://emoessner.github.io/lexcore
-- **Issues**: https://github.com/emoessner/lexcore/issues
+- **Repository**: https://github.com/scoomboot/lexcore
+- **Documentation**: https://scoomboot.github.io/lexcore
+- **Issues**: https://github.com/scoomboot/lexcore/issues

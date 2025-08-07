@@ -1,10 +1,10 @@
 // lexer.zig — Core lexer implementation
 //
-// repo   : https://github.com/emoessner/lexcore  
-// docs   : https://emoessner.github.io/lexcore/lib/lexer/lexer
-// author : https://github.com/emoessner
+// repo   : https://github.com/scoomboot/lexcore  
+// docs   : https://scoomboot.github.io/lexcore/lib/lexer/lexer
+// author : https://github.com/scoomboot
 //
-// Developed with ❤️ by emoessner.
+// Developed with ❤️ by scoomboot.
 
 // ╔══════════════════════════════════════ PACK ══════════════════════════════════════╗
 
