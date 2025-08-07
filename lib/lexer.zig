@@ -36,9 +36,37 @@
     pub const Buffer = buffer.Buffer;
     pub const LexerCore = core.LexerCore;
     
-    // Factory function for creating lexers
+    /// Factory function for creating lexers.
+    ///
+    /// Memory ownership: Creates a new Lexer on the heap.
+    /// The caller must call destroyLexer() to properly clean up.
+    ///
+    /// __Parameters__
+    ///
+    /// - `allocator`: Memory allocator for the lexer instance
+    ///
+    /// __Return__
+    ///
+    /// - Pointer to new Lexer instance or error if allocation fails
     pub fn createLexer(allocator: std.mem.Allocator) !*Lexer {
         return lexer_impl.create(allocator);
+    }
+    
+    /// Cleanup function for factory-created lexers.
+    ///
+    /// Memory ownership: Properly cleans up a lexer created with createLexer().
+    /// This function calls deinit() on the lexer's internal resources
+    /// and then frees the lexer instance itself.
+    ///
+    /// __Parameters__
+    ///
+    /// - `lexer`: Pointer to lexer instance to destroy
+    ///
+    /// __Return__
+    ///
+    /// - None
+    pub fn destroyLexer(lexer: *Lexer) void {
+        lexer_impl.destroy(lexer);
     }
 
 // ╚══════════════════════════════════════════════════════════════════════════════════════╝
@@ -58,11 +86,12 @@
         _ = Buffer;
         _ = LexerCore;
         
-        // Test factory function
+        // Test factory function with proper cleanup
         const lexer = try createLexer(testing.allocator);
-        defer lexer.deinit();
+        defer destroyLexer(lexer);
         
-        try testing.expect(lexer != undefined);
+        // Verify the lexer was created successfully
+        try testing.expect(@intFromPtr(lexer) != 0);
     }
 
 // ╚══════════════════════════════════════════════════════════════════════════════════════╝

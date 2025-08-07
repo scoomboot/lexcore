@@ -116,6 +116,9 @@
     };
     
     /// Token structure representing a lexical unit
+    /// 
+    /// Memory ownership: Token owns its lexeme if it was dynamically allocated.
+    /// The token is responsible for freeing the lexeme memory through deinit().
     pub const Token = struct {
         type: TokenType,
         lexeme: []const u8,
@@ -124,7 +127,16 @@
         /// Optional value for literals
         value: ?TokenValue = null,
         
+        /// Whether the lexeme was allocated and needs to be freed
+        owns_lexeme: bool = false,
+        
+        /// Allocator used for lexeme (if owned)
+        allocator: ?std.mem.Allocator = null,
+        
         /// Create a new token
+        /// 
+        /// Memory ownership: The caller retains ownership of the lexeme.
+        /// The token will not free this memory on deinit.
         pub fn init(
             token_type: TokenType,
             lexeme: []const u8,
@@ -134,10 +146,33 @@
                 .type = token_type,
                 .lexeme = lexeme,
                 .position = pos,
+                .owns_lexeme = false,
+            };
+        }
+        
+        /// Create a new token with owned lexeme
+        /// 
+        /// Memory ownership: The token takes ownership of the lexeme.
+        /// The lexeme will be freed when deinit() is called.
+        pub fn initOwned(
+            allocator: std.mem.Allocator,
+            token_type: TokenType,
+            lexeme: []const u8,
+            pos: position.Position,
+        ) Token {
+            return .{
+                .type = token_type,
+                .lexeme = lexeme,
+                .position = pos,
+                .owns_lexeme = true,
+                .allocator = allocator,
             };
         }
         
         /// Create a token with a value
+        /// 
+        /// Memory ownership: The caller retains ownership of the lexeme.
+        /// The token will not free this memory on deinit.
         pub fn initWithValue(
             token_type: TokenType,
             lexeme: []const u8,
@@ -149,7 +184,41 @@
                 .lexeme = lexeme,
                 .position = pos,
                 .value = value,
+                .owns_lexeme = false,
             };
+        }
+        
+        /// Create a token with owned lexeme and value
+        /// 
+        /// Memory ownership: The token takes ownership of the lexeme.
+        /// The lexeme will be freed when deinit() is called.
+        pub fn initOwnedWithValue(
+            allocator: std.mem.Allocator,
+            token_type: TokenType,
+            lexeme: []const u8,
+            pos: position.Position,
+            value: TokenValue,
+        ) Token {
+            return .{
+                .type = token_type,
+                .lexeme = lexeme,
+                .position = pos,
+                .value = value,
+                .owns_lexeme = true,
+                .allocator = allocator,
+            };
+        }
+        
+        /// Clean up token resources
+        /// 
+        /// Memory ownership: Frees the lexeme if it was allocated and owned by this token.
+        /// After calling deinit, the token should not be used.
+        pub fn deinit(self: *Token) void {
+            if (self.owns_lexeme and self.allocator != null) {
+                self.allocator.?.free(self.lexeme);
+                self.owns_lexeme = false;
+                self.allocator = null;
+            }
         }
         
         /// Check if tokens are equal (excluding position)

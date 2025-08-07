@@ -22,6 +22,10 @@
     pub const Position = lexer.Position;
     pub const LexerError = lexer.LexerError;
     pub const Buffer = lexer.Buffer;
+    
+    // Re-export factory functions for proper memory management
+    pub const createLexer = lexer.createLexer;
+    pub const destroyLexer = lexer.destroyLexer;
 
     // Version information
     pub const version = std.SemanticVersion{

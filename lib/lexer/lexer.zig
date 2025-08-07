@@ -20,6 +20,9 @@
 // ╔══════════════════════════════════════ CORE ══════════════════════════════════════╗
 
     /// Main lexer structure implementing the core lexer interface
+    /// 
+    /// Memory ownership: The lexer owns all tokens in its token list and is
+    /// responsible for cleaning them up on deinit.
     pub const Lexer = struct {
         allocator: std.mem.Allocator,
         input_buffer: buffer.Buffer,
@@ -27,7 +30,10 @@
         tokens: std.ArrayList(token.Token),
         errors: std.ArrayList(@"error".LexerError),
         
-        /// Initialize a new lexer instance
+        /// Initialize a new lexer instance.
+        /// 
+        /// Memory ownership: The lexer takes ownership of its internal structures.
+        /// Call deinit() to clean up all resources.
         pub fn init(allocator: std.mem.Allocator) !Lexer {
             return Lexer{
                 .allocator = allocator,
@@ -38,20 +44,58 @@
             };
         }
         
-        /// Clean up lexer resources
+        /// Clean up lexer resources.
+        ///
+        /// Memory ownership: Frees all token lexemes that were allocated,
+        /// then cleans up all internal structures.
+        ///
+        /// __Parameters__
+        ///
+        /// - `self`: Lexer instance to clean up
+        ///
+        /// __Return__
+        ///
+        /// - None
         pub fn deinit(self: *Lexer) void {
+            // Free all token lexemes before clearing the list
+            for (self.tokens.items) |*tok| {
+                tok.deinit();
+            }
             self.input_buffer.deinit();
             self.tokens.deinit();
             self.errors.deinit();
         }
         
-        /// Set input source for lexing
+        /// Set input source for lexing.
+        ///
+        /// Memory ownership: The lexer does not take ownership of the input slice.
+        /// The input must remain valid for the lifetime of lexing operations.
+        ///
+        /// __Parameters__
+        ///
+        /// - `self`: Lexer instance
+        /// - `input`: Source text to tokenize
+        ///
+        /// __Return__
+        ///
+        /// - None or error if buffer operations fail
         pub fn setInput(self: *Lexer, input: []const u8) !void {
             try self.input_buffer.setContent(input);
             self.current_position = position.Position.init();
         }
         
-        /// Get next token from input
+        /// Get next token from input.
+        ///
+        /// Memory ownership: The returned token owns its lexeme and must be
+        /// cleaned up by calling deinit() when no longer needed.
+        ///
+        /// __Parameters__
+        ///
+        /// - `self`: Lexer instance
+        ///
+        /// __Return__
+        ///
+        /// - Next Token or null if end of input, error if processing fails
         pub fn nextToken(self: *Lexer) !?token.Token {
             // Placeholder implementation
             if (self.input_buffer.isAtEnd()) {
@@ -72,18 +116,61 @@
             }
             
             if (lexeme.items.len > 0) {
-                return token.Token{
-                    .type = token.TokenType.Identifier,
-                    .lexeme = try self.allocator.dupe(u8, lexeme.items),
-                    .position = start_pos,
-                };
+                // Create token with owned lexeme
+                const duped_lexeme = try self.allocator.dupe(u8, lexeme.items);
+                return token.Token.initOwned(
+                    self.allocator,
+                    token.TokenType.Identifier,
+                    duped_lexeme,
+                    start_pos,
+                );
             }
             
             return null;
         }
         
-        /// Tokenize entire input
+        /// Reset the lexer to initial state.
+        ///
+        /// Clears all tokens and errors, resets position tracking.
+        /// The input buffer remains unchanged.
+        ///
+        /// __Parameters__
+        ///
+        /// - `self`: Lexer instance to reset
+        ///
+        /// __Return__
+        ///
+        /// - None
+        pub fn reset(self: *Lexer) void {
+            // Clear tokens, freeing lexemes
+            for (self.tokens.items) |*tok| {
+                tok.deinit(self.allocator);
+            }
+            self.tokens.clearRetainingCapacity();
+            
+            // Clear errors and reset position
+            self.errors.clearRetainingCapacity();
+            self.current_position = position.Position.init();
+        }
+        
+        /// Tokenize entire input.
+        ///
+        /// Memory ownership: The lexer retains ownership of all tokens.
+        /// The tokens will be freed when the lexer is deinitialized.
+        /// Callers should not free the returned tokens.
+        ///
+        /// __Parameters__
+        ///
+        /// - `self`: Lexer instance
+        ///
+        /// __Return__
+        ///
+        /// - Slice of all tokens or error if tokenization fails
         pub fn tokenize(self: *Lexer) ![]token.Token {
+            // Clear existing tokens, freeing their lexemes
+            for (self.tokens.items) |*tok| {
+                tok.deinit();
+            }
             self.tokens.clearRetainingCapacity();
             
             while (try self.nextToken()) |tok| {
@@ -94,11 +181,42 @@
         }
     };
     
-    /// Factory function for creating lexer instances
+    /// Factory function for creating lexer instances.
+    ///
+    /// Memory ownership: Allocates a new Lexer on the heap.
+    /// The caller must call destroy() to clean up both the lexer
+    /// and its internal resources.
+    ///
+    /// __Parameters__
+    ///
+    /// - `allocator`: Memory allocator for the lexer instance
+    ///
+    /// __Return__
+    ///
+    /// - Pointer to new Lexer instance or error if allocation fails
     pub fn create(allocator: std.mem.Allocator) !*Lexer {
         const lexer = try allocator.create(Lexer);
         lexer.* = try Lexer.init(allocator);
         return lexer;
+    }
+    
+    /// Destroy a factory-created lexer.
+    ///
+    /// Memory ownership: Cleans up all internal resources via deinit(),
+    /// then frees the lexer instance itself. After calling this function,
+    /// the lexer pointer is invalid and must not be used.
+    ///
+    /// __Parameters__
+    ///
+    /// - `lexer`: Pointer to lexer instance to destroy
+    ///
+    /// __Return__
+    ///
+    /// - None
+    pub fn destroy(lexer: *Lexer) void {
+        const allocator = lexer.allocator;
+        lexer.deinit();
+        allocator.destroy(lexer);
     }
 
 // ╚══════════════════════════════════════════════════════════════════════════════════════╝
