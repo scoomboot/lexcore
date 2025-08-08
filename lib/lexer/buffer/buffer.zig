@@ -260,6 +260,7 @@
         window_size: usize,
         window_start: usize,  // Absolute position in file where window starts
         position: usize,       // Current position within window
+        valid_bytes: usize,    // Actual amount of valid data in the window
         file_size: ?usize,     // Total file size if known
         eof_reached: bool,
         
@@ -278,6 +279,7 @@
                 .window_size = window_size,
                 .window_start = 0,
                 .position = 0,
+                .valid_bytes = 0,
                 .file_size = file_size,
                 .eof_reached = false,
             };
@@ -296,46 +298,77 @@
         /// Fill the window with data from the file
         fn fillWindow(self: *StreamingBuffer) !void {
             const bytes_read = try self.reader.read(self.window);
+            self.valid_bytes = bytes_read;
+            
+            // Determine if we've reached EOF
             if (bytes_read < self.window.len) {
+                // If we couldn't fill the whole window, we've definitely reached EOF
                 self.eof_reached = true;
-                // Zero out unused portion
-                @memset(self.window[bytes_read..], 0);
+            } else if (self.file_size) |size| {
+                // If we know the file size, check if we've read it all
+                const bytes_read_total = self.window_start + bytes_read;
+                if (bytes_read_total >= size) {
+                    self.eof_reached = true;
+                }
             }
         }
         
         /// Slide the window forward when needed
         fn slideWindow(self: *StreamingBuffer) !void {
-            if (self.eof_reached) {
+            if (self.eof_reached and self.position >= self.valid_bytes) {
                 return error.EndOfStream;
             }
             
-            // Keep last quarter of window for context
-            const keep_size = self.window_size / 4;
-            const slide_amount = self.window_size - keep_size;
+            // Determine how much data to keep from the current window
+            // We keep the last quarter of the window size, but not more than what we have
+            const target_keep = self.window_size / 4;
+            const available_to_keep = if (self.valid_bytes > self.position) 
+                self.valid_bytes - self.position 
+            else 0;
+            const keep_size = @min(target_keep, available_to_keep);
             
-            // Move kept data to beginning
-            std.mem.copyForwards(u8, self.window[0..keep_size], self.window[slide_amount..]);
+            // Calculate slide amount based on current position
+            const slide_amount = self.position;
             
-            // Read new data
-            const bytes_read = try self.reader.read(self.window[keep_size..]);
-            if (bytes_read < slide_amount) {
-                self.eof_reached = true;
-                // Zero out unused portion
-                @memset(self.window[keep_size + bytes_read..], 0);
+            // Move kept data to beginning if there's any
+            if (keep_size > 0) {
+                std.mem.copyForwards(u8, self.window[0..keep_size], self.window[self.position..self.position + keep_size]);
             }
             
+            // Read new data to fill the rest of the window
+            const read_size = self.window_size - keep_size;
+            const bytes_read = try self.reader.read(self.window[keep_size..keep_size + read_size]);
+            self.valid_bytes = keep_size + bytes_read;
+            
+            // Update window start position
             self.window_start += slide_amount;
-            self.position = if (self.position >= slide_amount) self.position - slide_amount else 0;
+            self.position = 0;  // Reset position to beginning of new window
+            
+            // Check if we've hit EOF
+            if (bytes_read < read_size) {
+                self.eof_reached = true;
+            } else if (self.file_size) |size| {
+                // If we know the file size, check if we've read it all
+                const bytes_read_total = self.window_start + self.valid_bytes;
+                if (bytes_read_total >= size) {
+                    self.eof_reached = true;
+                }
+            }
         }
         
         /// Peek at current byte without advancing
         pub fn peek(self: *StreamingBuffer) !u8 {
-            if (self.position >= self.window_size) {
+            // Need to slide window if we're at or past the valid data boundary
+            if (self.position >= self.valid_bytes) {
+                if (self.eof_reached) {
+                    return error.EndOfStream;
+                }
                 try self.slideWindow();
-            }
-            
-            if (self.eof_reached and self.position >= self.window.len) {
-                return error.EndOfStream;
+                
+                // After sliding, check again
+                if (self.position >= self.valid_bytes) {
+                    return error.EndOfStream;
+                }
             }
             
             return self.window[self.position];
@@ -354,8 +387,23 @@
         }
         
         /// Check if at end of stream
-        pub fn isAtEnd(self: *const StreamingBuffer) bool {
-            return self.eof_reached and self.position >= self.window.len;
+        pub fn isAtEnd(self: *StreamingBuffer) bool {
+            // If we've already detected EOF and we're at or past valid data, we're at end
+            if (self.eof_reached and self.position >= self.valid_bytes) {
+                return true;
+            }
+            
+            // If we're at the end of our valid data but haven't checked for EOF yet,
+            // try to peek ahead to detect it (this will trigger a slide if needed)
+            if (self.position >= self.valid_bytes and !self.eof_reached) {
+                _ = self.peek() catch {
+                    // If peek fails, we're at EOF
+                    return true;
+                };
+            }
+            
+            // After peek attempt, check again
+            return self.eof_reached and self.position >= self.valid_bytes;
         }
     };
     
