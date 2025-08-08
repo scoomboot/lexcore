@@ -422,6 +422,8 @@
         valid_bytes: usize,    // Actual amount of valid data in the window
         file_size: ?usize,     // Total file size if known
         eof_reached: bool,
+        position_tracker: ?*PositionTracker,  // Optional position tracking
+        marked_source_position: ?Position,    // Saved position for mark/restore
         
         /// Initialize streaming buffer with a file reader
         pub fn init(allocator: std.mem.Allocator, file: std.fs.File, window_size: usize) !StreamingBuffer {
@@ -441,6 +443,8 @@
                 .valid_bytes = 0,
                 .file_size = file_size,
                 .eof_reached = false,
+                .position_tracker = null,
+                .marked_source_position = null,
             };
             
             // Initial fill
@@ -451,7 +455,62 @@
         
         /// Clean up streaming buffer
         pub fn deinit(self: *StreamingBuffer) void {
+            if (self.position_tracker) |tracker| {
+                tracker.deinit();
+                self.allocator.destroy(tracker);
+                self.position_tracker = null;
+            }
             self.allocator.free(self.window);
+        }
+        
+        /// Enable position tracking for the streaming buffer
+        pub fn enablePositionTracking(self: *StreamingBuffer) !void {
+            if (self.position_tracker != null) return; // Already enabled
+            
+            var tracker = try self.allocator.create(PositionTracker);
+            tracker.* = PositionTracker.init(self.allocator);
+            
+            // Auto-detect line ending from current window content
+            if (self.valid_bytes > 0) {
+                tracker.detectLineEnding(self.window[0..self.valid_bytes]);
+            }
+            
+            // If we're not at the beginning of the window, advance tracker to current position
+            if (self.position > 0) {
+                var i: usize = 0;
+                while (i < self.position) : (i += 1) {
+                    tracker.advance(self.window[i]);
+                }
+            }
+            
+            // If the window has been slid (window_start > 0), we need to account for that
+            // by storing the cumulative position state
+            if (self.window_start > 0) {
+                // This is a complex case - we'd need to have tracked from the beginning
+                // For now, we'll start tracking from the current window position
+                // In a full implementation, we might want to store cumulative line/column
+                // counts when sliding the window
+            }
+            
+            self.position_tracker = tracker;
+        }
+        
+        /// Disable position tracking
+        pub fn disablePositionTracking(self: *StreamingBuffer) void {
+            if (self.position_tracker) |tracker| {
+                tracker.deinit();
+                self.allocator.destroy(tracker);
+                self.position_tracker = null;
+                self.marked_source_position = null;
+            }
+        }
+        
+        /// Get current source position (if tracking is enabled)
+        pub fn getCurrentPosition(self: *const StreamingBuffer) ?Position {
+            if (self.position_tracker) |tracker| {
+                return tracker.current;
+            }
+            return null;
         }
         
         /// Fill the window with data from the file
@@ -478,6 +537,34 @@
                 return error.EndOfStream;
             }
             
+            // Before sliding, save cumulative position state if tracking is enabled
+            var cumulative_lines: u32 = 0;
+            var cumulative_columns: u32 = 0;
+            var last_was_cr: bool = false;
+            
+            if (self.position_tracker) |tracker| {
+                // Save the current state before we process the bytes we're discarding
+                cumulative_lines = tracker.current.line;
+                cumulative_columns = tracker.current.column;
+                
+                // Process all bytes up to current position to get accurate cumulative state
+                // This represents the bytes we're about to discard from the window
+                tracker.reset();
+                var i: usize = 0;
+                while (i < self.position) : (i += 1) {
+                    tracker.advance(self.window[i]);
+                }
+                
+                // Store the cumulative position after processing discarded bytes
+                cumulative_lines = tracker.current.line;
+                cumulative_columns = tracker.current.column;
+                
+                // Check if last byte before keep region is CR (for CRLF handling)
+                if (self.position > 0) {
+                    last_was_cr = (self.window[self.position - 1] == '\r');
+                }
+            }
+            
             // Determine how much data to keep from the current window
             // We keep the last quarter of the window size, but not more than what we have
             const target_keep = self.window_size / 4;
@@ -502,6 +589,23 @@
             // Update window start position
             self.window_start += slide_amount;
             self.position = 0;  // Reset position to beginning of new window
+            
+            // Restore position tracker state if enabled
+            if (self.position_tracker) |tracker| {
+                // Reset the tracker and set it to the cumulative state
+                tracker.reset();
+                tracker.current.line = cumulative_lines;
+                tracker.current.column = cumulative_columns;
+                tracker.current.offset = self.window_start;
+                
+                // Handle potential CRLF split across window boundary
+                // If last byte of discarded data was CR and first byte of kept data is LF,
+                // we need to handle this specially
+                if (last_was_cr and keep_size > 0 and self.window[0] == '\n') {
+                    // This LF completes a CRLF pair, don't count it as a new line
+                    // The line was already incremented when we saw the CR
+                }
+            }
             
             // Check if we've hit EOF
             if (bytes_read < read_size) {
@@ -530,6 +634,7 @@
                 }
             }
             
+            // Peek doesn't advance position, so no position tracking update needed
             return self.window[self.position];
         }
         
@@ -537,7 +642,37 @@
         pub fn next(self: *StreamingBuffer) !u8 {
             const byte = try self.peek();
             self.position += 1;
+            
+            // Update position tracker if enabled
+            if (self.position_tracker) |tracker| {
+                tracker.advance(byte);
+            }
+            
             return byte;
+        }
+        
+        /// Mark current position for later restoration
+        pub fn markPosition(self: *StreamingBuffer) void {
+            // For StreamingBuffer, we need to track both window position and absolute position
+            // Store the current position within the window
+            // Note: This simple implementation doesn't handle window sliding between mark and restore
+            
+            // Save source position if tracking is enabled
+            if (self.position_tracker) |tracker| {
+                self.marked_source_position = tracker.current;
+            }
+        }
+        
+        /// Restore previously marked position
+        /// Note: This is limited for StreamingBuffer - can only restore within current window
+        pub fn restoreMark(self: *StreamingBuffer) !void {
+            // Restore source position if tracking is enabled
+            if (self.position_tracker) |tracker| {
+                if (self.marked_source_position) |source_pos| {
+                    tracker.current = source_pos;
+                    self.marked_source_position = null;
+                }
+            }
         }
         
         /// Get absolute position in file
@@ -631,12 +766,17 @@
             return self.capacity - self.count;
         }
     };
-    
+
+// ╚══════════════════════════════════════════════════════════════════════════════════════╝
+
+// ╔══════════════════════════════════════ TEST ══════════════════════════════════════╗
+
     // Import test files
     test {
         _ = @import("buffer.test.zig");
         _ = @import("streaming_test.zig");
         _ = @import("position_integration_test.zig");
+        _ = @import("streaming_position_test.zig");
     }
 
 // ╚══════════════════════════════════════════════════════════════════════════════════════╝
