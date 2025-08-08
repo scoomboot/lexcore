@@ -9,10 +9,44 @@
 // ╔══════════════════════════════════════ PACK ══════════════════════════════════════╗
 
     const std = @import("std");
+    const unicode = std.unicode;
 
 // ╚══════════════════════════════════════════════════════════════════════════════════════╝
 
 // ╔══════════════════════════════════════ CORE ══════════════════════════════════════╗
+
+    /// Line ending types supported by the position tracker
+    pub const LineEnding = enum {
+        lf,     // \n (Unix/Linux/macOS)
+        cr,     // \r (Classic Mac)
+        crlf,   // \r\n (Windows)
+        
+        /// Detect line ending from a buffer
+        pub fn detect(buffer: []const u8) LineEnding {
+            // Look for first line ending in the buffer
+            for (buffer, 0..) |char, i| {
+                if (char == '\r') {
+                    // Check if followed by \n
+                    if (i + 1 < buffer.len and buffer[i + 1] == '\n') {
+                        return .crlf;
+                    }
+                    return .cr;
+                } else if (char == '\n') {
+                    return .lf;
+                }
+            }
+            // Default to LF if no line endings found
+            return .lf;
+        }
+        
+        /// Get the byte length of this line ending
+        pub fn length(self: LineEnding) usize {
+            return switch (self) {
+                .lf, .cr => 1,
+                .crlf => 2,
+            };
+        }
+    };
 
     /// Source position within text
     /// 
@@ -41,21 +75,81 @@
             };
         }
         
-        /// Advance position by one character
-        pub fn advance(self: *SourcePosition, char: u8) void {
+        /// Advance position by one character with tab width support
+        pub fn advanceWithTabWidth(self: *SourcePosition, char: u8, tab_width: u32) void {
             self.offset += 1;
             if (char == '\n') {
                 self.line += 1;
                 self.column = 1;
+            } else if (char == '\r') {
+                // CR is handled separately, might be part of CRLF
+                // Don't advance column for CR
+            } else if (char == '\t') {
+                // Advance to next tab stop
+                const spaces_to_tab = tab_width - ((self.column - 1) % tab_width);
+                self.column += spaces_to_tab;
             } else {
                 self.column += 1;
             }
         }
         
-        /// Advance position by multiple characters
-        pub fn advanceString(self: *SourcePosition, text: []const u8) void {
+        /// Advance position by one character (uses default tab width of 4)
+        pub fn advance(self: *SourcePosition, char: u8) void {
+            self.advanceWithTabWidth(char, 4);
+        }
+        
+        /// Advance position by multiple characters with tab width support
+        pub fn advanceStringWithTabWidth(self: *SourcePosition, text: []const u8, tab_width: u32) void {
             for (text) |char| {
-                self.advance(char);
+                self.advanceWithTabWidth(char, tab_width);
+            }
+        }
+        
+        /// Advance position by multiple characters (uses default tab width of 4)
+        pub fn advanceString(self: *SourcePosition, text: []const u8) void {
+            self.advanceStringWithTabWidth(text, 4);
+        }
+        
+        /// Advance position by a UTF-8 codepoint
+        pub fn advanceCodepoint(self: *SourcePosition, codepoint: u21, tab_width: u32) void {
+            // Special handling for control characters
+            if (codepoint == '\n') {
+                self.offset += 1;
+                self.line += 1;
+                self.column = 1;
+            } else if (codepoint == '\r') {
+                self.offset += 1;
+                // Don't advance column for CR
+            } else if (codepoint == '\t') {
+                self.offset += 1;
+                const spaces_to_tab = tab_width - ((self.column - 1) % tab_width);
+                self.column += spaces_to_tab;
+            } else {
+                // Calculate byte length of the codepoint
+                const len = unicode.utf8CodepointSequenceLength(codepoint) catch 1;
+                self.offset += len;
+                // Most codepoints advance column by 1
+                // Note: This doesn't handle wide characters or combining marks
+                self.column += 1;
+            }
+        }
+        
+        /// Advance position by UTF-8 bytes
+        pub fn advanceUtf8Bytes(self: *SourcePosition, bytes: []const u8, tab_width: u32) void {
+            var i: usize = 0;
+            while (i < bytes.len) {
+                const len = unicode.utf8ByteSequenceLength(bytes[i]) catch 1;
+                if (i + len > bytes.len) break;
+                
+                const codepoint = unicode.utf8Decode(bytes[i..i + len]) catch {
+                    // Invalid UTF-8, treat as single byte
+                    self.advanceWithTabWidth(bytes[i], tab_width);
+                    i += 1;
+                    continue;
+                };
+                
+                self.advanceCodepoint(codepoint, tab_width);
+                i += len;
             }
         }
         
@@ -218,12 +312,26 @@
     pub const PositionTracker = struct {
         current: Position,
         marks: std.ArrayList(Position),
+        tab_width: u32,
+        line_ending: LineEnding,
         
-        /// Initialize position tracker
+        /// Initialize position tracker with default settings
         pub fn init(allocator: std.mem.Allocator) PositionTracker {
             return .{
                 .current = Position.init(),
                 .marks = std.ArrayList(Position).init(allocator),
+                .tab_width = 4,
+                .line_ending = .lf,
+            };
+        }
+        
+        /// Initialize position tracker with custom settings
+        pub fn initWithConfig(allocator: std.mem.Allocator, tab_width: u32, line_ending: LineEnding) PositionTracker {
+            return .{
+                .current = Position.init(),
+                .marks = std.ArrayList(Position).init(allocator),
+                .tab_width = tab_width,
+                .line_ending = line_ending,
             };
         }
         
@@ -238,14 +346,58 @@
             self.marks.clearRetainingCapacity();
         }
         
-        /// Advance by character
-        pub fn advance(self: *PositionTracker, char: u8) void {
-            self.current.advance(char);
+        /// Set tab width
+        pub fn setTabWidth(self: *PositionTracker, width: u32) void {
+            self.tab_width = width;
         }
         
-        /// Advance by string
+        /// Set line ending type
+        pub fn setLineEnding(self: *PositionTracker, ending: LineEnding) void {
+            self.line_ending = ending;
+        }
+        
+        /// Detect and set line ending from buffer
+        pub fn detectLineEnding(self: *PositionTracker, buffer: []const u8) void {
+            self.line_ending = LineEnding.detect(buffer);
+        }
+        
+        /// Advance by character using configured tab width
+        pub fn advance(self: *PositionTracker, char: u8) void {
+            // Handle different line endings
+            if (char == '\r') {
+                self.current.offset += 1;
+                // Don't update line/column yet, might be CRLF
+            } else if (char == '\n') {
+                // Check if this completes a CRLF
+                if (self.line_ending == .crlf and self.current.offset > 0) {
+                    // We're expecting CRLF and already saw CR
+                    self.current.offset += 1;
+                }
+                self.current.line += 1;
+                self.current.column = 1;
+                if (self.line_ending != .crlf) {
+                    self.current.offset += 1;
+                }
+            } else {
+                self.current.advanceWithTabWidth(char, self.tab_width);
+            }
+        }
+        
+        /// Advance by string using configured tab width
         pub fn advanceString(self: *PositionTracker, text: []const u8) void {
-            self.current.advanceString(text);
+            for (text) |char| {
+                self.advance(char);
+            }
+        }
+        
+        /// Advance by a UTF-8 codepoint
+        pub fn advanceCodepoint(self: *PositionTracker, codepoint: u21) void {
+            self.current.advanceCodepoint(codepoint, self.tab_width);
+        }
+        
+        /// Advance by UTF-8 bytes with proper multi-byte handling
+        pub fn advanceUtf8Bytes(self: *PositionTracker, bytes: []const u8) void {
+            self.current.advanceUtf8Bytes(bytes, self.tab_width);
         }
         
         /// Mark current position
@@ -269,6 +421,213 @@
             }
             const mark_pos = self.marks.items[self.marks.items.len - 1];
             return Range.init(mark_pos, self.current);
+        }
+        
+        /// Pop the last mark and create a range from it to current position
+        /// This is useful for creating token ranges after lexing
+        pub fn popMarkToRange(self: *PositionTracker) !Range {
+            if (self.marks.items.len == 0) {
+                return error.NoMarkSet;
+            }
+            const mark_pos = self.marks.pop().?;
+            return Range.init(mark_pos, self.current);
+        }
+        
+        /// Get the distance between two positions
+        /// Returns difference in lines, columns, and bytes
+        pub fn getPositionDifference(start: Position, end: Position) PositionDifference {
+            const line_diff = if (end.line >= start.line) 
+                end.line - start.line 
+            else 
+                0;
+            
+            const column_diff = if (end.line == start.line) 
+                if (end.column >= start.column) end.column - start.column else 0
+            else 
+                end.column - 1; // End column from start of its line
+            
+            const byte_diff = if (end.offset >= start.offset) 
+                end.offset - start.offset 
+            else 
+                0;
+            
+            return .{
+                .lines = line_diff,
+                .columns = column_diff,
+                .bytes = byte_diff,
+            };
+        }
+        
+        /// Convert a byte offset to a Position by scanning from the start
+        /// Requires the original buffer to accurately track line/column positions
+        pub fn offsetToPosition(self: *const PositionTracker, buffer: []const u8, target_offset: usize) !Position {
+            if (target_offset > buffer.len) {
+                return error.OffsetOutOfBounds;
+            }
+            
+            var pos = Position.init();
+            var i: usize = 0;
+            
+            while (i < target_offset and i < buffer.len) {
+                const char = buffer[i];
+                
+                // Handle different line endings
+                if (char == '\r') {
+                    // Check for CRLF
+                    if (i + 1 < buffer.len and buffer[i + 1] == '\n') {
+                        pos.offset = i + 2;
+                        pos.line += 1;
+                        pos.column = 1;
+                        i += 2;
+                        if (i > target_offset) {
+                            // Target was the CR in CRLF
+                            pos.offset = target_offset;
+                            break;
+                        }
+                    } else {
+                        // Just CR
+                        pos.offset = i + 1;
+                        pos.line += 1;
+                        pos.column = 1;
+                        i += 1;
+                    }
+                } else if (char == '\n') {
+                    pos.offset = i + 1;
+                    pos.line += 1;
+                    pos.column = 1;
+                    i += 1;
+                } else if (char == '\t') {
+                    pos.offset = i + 1;
+                    const spaces_to_tab = self.tab_width - ((pos.column - 1) % self.tab_width);
+                    pos.column += spaces_to_tab;
+                    i += 1;
+                } else {
+                    pos.offset = i + 1;
+                    pos.column += 1;
+                    i += 1;
+                }
+            }
+            
+            // Adjust if we overshot due to multi-byte sequences
+            if (pos.offset > target_offset) {
+                pos.offset = target_offset;
+            }
+            
+            return pos;
+        }
+        
+        /// Check if current position is at the start of a line
+        pub fn isAtLineStart(self: *const PositionTracker) bool {
+            return self.current.column == 1;
+        }
+        
+        /// Check if current position is at the end of a line
+        /// Requires lookahead into the buffer to determine
+        pub fn isAtLineEnd(self: *const PositionTracker, buffer: []const u8) bool {
+            if (self.current.offset >= buffer.len) {
+                return true; // At end of buffer
+            }
+            
+            const next_char = buffer[self.current.offset];
+            
+            // Check for line ending characters
+            if (next_char == '\n' or next_char == '\r') {
+                return true;
+            }
+            
+            return false;
+        }
+        
+        /// Check if current position is at the start of the buffer
+        pub fn isAtStart(self: *const PositionTracker) bool {
+            return self.current.offset == 0;
+        }
+        
+        /// Check if current position is at the end of the buffer
+        pub fn isAtEnd(self: *const PositionTracker, buffer: []const u8) bool {
+            return self.current.offset >= buffer.len;
+        }
+        
+        /// Get column position considering tab stops
+        /// This returns the visual column position accounting for tab expansion
+        pub fn getVisualColumn(self: *const PositionTracker) u32 {
+            return self.current.column;
+        }
+        
+        /// Skip whitespace from current position
+        /// Returns the number of bytes skipped
+        pub fn skipWhitespace(self: *PositionTracker, buffer: []const u8) usize {
+            const start_offset = self.current.offset;
+            
+            while (self.current.offset < buffer.len) {
+                const char = buffer[self.current.offset];
+                switch (char) {
+                    ' ', '\t' => self.advance(char),
+                    else => break,
+                }
+            }
+            
+            return self.current.offset - start_offset;
+        }
+        
+        /// Skip to end of current line
+        /// Positions cursor at the line ending character(s)
+        pub fn skipToLineEnd(self: *PositionTracker, buffer: []const u8) void {
+            while (self.current.offset < buffer.len) {
+                const char = buffer[self.current.offset];
+                if (char == '\n' or char == '\r') {
+                    break;
+                }
+                self.advance(char);
+            }
+        }
+        
+        /// Skip to start of next line
+        /// Positions cursor at the first character of the next line
+        pub fn skipToNextLine(self: *PositionTracker, buffer: []const u8) void {
+            // First skip to line end
+            self.skipToLineEnd(buffer);
+            
+            // Then skip the line ending
+            if (self.current.offset < buffer.len) {
+                const char = buffer[self.current.offset];
+                if (char == '\r') {
+                    self.advance(char);
+                    // Check for CRLF
+                    if (self.current.offset < buffer.len and buffer[self.current.offset] == '\n') {
+                        self.advance('\n');
+                    }
+                } else if (char == '\n') {
+                    self.advance(char);
+                }
+            }
+        }
+        
+        /// Get a snapshot of the current position
+        pub fn snapshot(self: *const PositionTracker) Position {
+            return self.current;
+        }
+        
+        /// Restore position from a snapshot
+        pub fn restoreSnapshot(self: *PositionTracker, pos: Position) void {
+            self.current = pos;
+        }
+    };
+    
+    /// Structure representing the difference between two positions
+    pub const PositionDifference = struct {
+        lines: u32,    // Number of lines between positions
+        columns: u32,  // Column difference (only meaningful on same line)
+        bytes: usize,  // Byte offset difference
+        
+        /// Check if positions are on the same line
+        pub fn isSameLine(self: PositionDifference) bool {
+            return self.lines == 0;
+        }
+        
+        /// Get total distance as a simple metric
+        pub fn totalDistance(self: PositionDifference) usize {
+            return self.bytes;
         }
     };
     

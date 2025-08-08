@@ -10,7 +10,9 @@
 
     const std = @import("std");
     const unicode = @import("../utils/unicode/unicode.zig");
-    const PositionTracker = @import("../position/position.zig").PositionTracker;
+    const position_module = @import("../position/position.zig");
+    const PositionTracker = position_module.PositionTracker;
+    const Position = position_module.Position;
 
 // ╚══════════════════════════════════════════════════════════════════════════════════════╝
 
@@ -25,6 +27,8 @@
         data: []const u8,
         position: usize,
         mark: ?usize,
+        position_tracker: ?*PositionTracker,
+        marked_source_position: ?Position,
         
         /// Initialize an empty buffer
         pub fn init(allocator: std.mem.Allocator) !Buffer {
@@ -33,6 +37,8 @@
                 .data = &[_]u8{},
                 .position = 0,
                 .mark = null,
+                .position_tracker = null,
+                .marked_source_position = null,
             };
         }
         
@@ -43,13 +49,79 @@
                 .data = content,
                 .position = 0,
                 .mark = null,
+                .position_tracker = null,
+                .marked_source_position = null,
+            };
+        }
+        
+        /// Initialize buffer with content and position tracking
+        pub fn initWithPositionTracking(allocator: std.mem.Allocator, content: []const u8) !Buffer {
+            var tracker = try allocator.create(PositionTracker);
+            tracker.* = PositionTracker.init(allocator);
+            
+            // Auto-detect line ending from content
+            if (content.len > 0) {
+                tracker.detectLineEnding(content);
+            }
+            
+            return Buffer{
+                .allocator = allocator,
+                .data = content,
+                .position = 0,
+                .mark = null,
+                .position_tracker = tracker,
+                .marked_source_position = null,
             };
         }
         
         /// Clean up buffer resources
         pub fn deinit(self: *Buffer) void {
-            // Currently no dynamic allocation to clean up
-            _ = self;
+            if (self.position_tracker) |tracker| {
+                tracker.deinit();
+                self.allocator.destroy(tracker);
+                self.position_tracker = null;
+            }
+        }
+        
+        /// Enable position tracking
+        pub fn enablePositionTracking(self: *Buffer) !void {
+            if (self.position_tracker != null) return; // Already enabled
+            
+            var tracker = try self.allocator.create(PositionTracker);
+            tracker.* = PositionTracker.init(self.allocator);
+            
+            // Auto-detect line ending from content
+            if (self.data.len > 0) {
+                tracker.detectLineEnding(self.data);
+            }
+            
+            // If we're not at the beginning, advance tracker to current position
+            if (self.position > 0) {
+                var i: usize = 0;
+                while (i < self.position) : (i += 1) {
+                    tracker.advance(self.data[i]);
+                }
+            }
+            
+            self.position_tracker = tracker;
+        }
+        
+        /// Disable position tracking
+        pub fn disablePositionTracking(self: *Buffer) void {
+            if (self.position_tracker) |tracker| {
+                tracker.deinit();
+                self.allocator.destroy(tracker);
+                self.position_tracker = null;
+                self.marked_source_position = null;
+            }
+        }
+        
+        /// Get current source position (if tracking is enabled)
+        pub fn getCurrentPosition(self: *const Buffer) ?Position {
+            if (self.position_tracker) |tracker| {
+                return tracker.current;
+            }
+            return null;
         }
         
         /// Set buffer content
@@ -57,6 +129,16 @@
             self.data = content;
             self.position = 0;
             self.mark = null;
+            self.marked_source_position = null;
+            
+            // Reset position tracker if enabled
+            if (self.position_tracker) |tracker| {
+                tracker.reset();
+                // Auto-detect line ending from new content
+                if (content.len > 0) {
+                    tracker.detectLineEnding(content);
+                }
+            }
         }
         
         /// Get current character without advancing (byte-level)
@@ -89,6 +171,12 @@
         pub fn next(self: *Buffer) !u8 {
             const char = try self.peek();
             self.position += 1;
+            
+            // Update position tracker if enabled
+            if (self.position_tracker) |tracker| {
+                tracker.advance(char);
+            }
+            
             return char;
         }
         
@@ -98,13 +186,29 @@
                 return error.EndOfBuffer;
             }
             const result = try unicode.decodeUtf8(self.data[self.position..]);
+            
+            // Update position tracker with UTF-8 aware advance if enabled
+            if (self.position_tracker) |tracker| {
+                tracker.advanceUtf8Bytes(self.data[self.position..self.position + result.bytes_consumed]);
+            }
+            
             self.position += result.bytes_consumed;
             return result.codepoint;
         }
         
         /// Advance position by n bytes
         pub fn advance(self: *Buffer, n: usize) void {
+            const old_position = self.position;
             self.position = @min(self.position + n, self.data.len);
+            
+            // Update position tracker if enabled
+            if (self.position_tracker) |tracker| {
+                // Advance through each byte to properly track line/column
+                var i = old_position;
+                while (i < self.position) : (i += 1) {
+                    tracker.advance(self.data[i]);
+                }
+            }
         }
         
         /// Advance position by n Unicode codepoints
@@ -112,6 +216,12 @@
             var count: usize = 0;
             while (count < n and self.position < self.data.len) : (count += 1) {
                 const result = try unicode.decodeUtf8(self.data[self.position..]);
+                
+                // Update position tracker with UTF-8 aware advance if enabled
+                if (self.position_tracker) |tracker| {
+                    tracker.advanceUtf8Bytes(self.data[self.position..self.position + result.bytes_consumed]);
+                }
+                
                 self.position += result.bytes_consumed;
             }
             if (count < n) {
@@ -121,12 +231,29 @@
         
         /// Move back n positions
         pub fn retreat(self: *Buffer, n: usize) void {
-            self.position = if (n > self.position) 0 else self.position - n;
+            const new_position = if (n > self.position) 0 else self.position - n;
+            
+            // If position tracking is enabled, we need to recalculate position from the beginning
+            // since going backwards is complex with variable-width UTF-8 and line tracking
+            if (self.position_tracker) |tracker| {
+                tracker.reset();
+                var i: usize = 0;
+                while (i < new_position) : (i += 1) {
+                    tracker.advance(self.data[i]);
+                }
+            }
+            
+            self.position = new_position;
         }
         
         /// Mark current position for later restoration
         pub fn markPosition(self: *Buffer) void {
             self.mark = self.position;
+            
+            // Save source position if tracking is enabled
+            if (self.position_tracker) |tracker| {
+                self.marked_source_position = tracker.current;
+            }
         }
         
         /// Restore previously marked position
@@ -134,6 +261,14 @@
             if (self.mark) |mark| {
                 self.position = mark;
                 self.mark = null;
+                
+                // Restore source position if tracking is enabled
+                if (self.position_tracker) |tracker| {
+                    if (self.marked_source_position) |source_pos| {
+                        tracker.current = source_pos;
+                        self.marked_source_position = null;
+                    }
+                }
             } else {
                 return error.NoMarkSet;
             }
@@ -169,6 +304,12 @@
         pub fn reset(self: *Buffer) void {
             self.position = 0;
             self.mark = null;
+            self.marked_source_position = null;
+            
+            // Reset position tracker if enabled
+            if (self.position_tracker) |tracker| {
+                tracker.reset();
+            }
         }
         
         /// Skip characters while predicate returns true
@@ -178,6 +319,12 @@
                 if (!predicate(result.codepoint)) {
                     break;
                 }
+                
+                // Update position tracker with UTF-8 aware advance if enabled
+                if (self.position_tracker) |tracker| {
+                    tracker.advanceUtf8Bytes(self.data[self.position..self.position + result.bytes_consumed]);
+                }
+                
                 self.position += result.bytes_consumed;
             }
         }
@@ -191,6 +338,12 @@
                 if (!predicate(result.codepoint)) {
                     break;
                 }
+                
+                // Update position tracker with UTF-8 aware advance if enabled
+                if (self.position_tracker) |tracker| {
+                    tracker.advanceUtf8Bytes(self.data[self.position..self.position + result.bytes_consumed]);
+                }
+                
                 self.position += result.bytes_consumed;
             }
             
@@ -220,9 +373,15 @@
             if (!unicode.isIdentifierStart(first_result.codepoint)) {
                 return error.InvalidIdentifierStart;
             }
+            
+            // Update position tracker for the first character if enabled
+            if (self.position_tracker) |tracker| {
+                tracker.advanceUtf8Bytes(self.data[self.position..self.position + first_result.bytes_consumed]);
+            }
+            
             self.position += first_result.bytes_consumed;
             
-            // Consume continuing characters
+            // Consume continuing characters (consumeWhile already updates position tracker)
             _ = try self.consumeWhile(unicode.isIdentifierContinue);
             
             return self.data[start..self.position];
@@ -477,6 +636,7 @@
     test {
         _ = @import("buffer.test.zig");
         _ = @import("streaming_test.zig");
+        _ = @import("position_integration_test.zig");
     }
 
 // ╚══════════════════════════════════════════════════════════════════════════════════════╝
