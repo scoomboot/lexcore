@@ -631,7 +631,7 @@
         
         const end = std.time.nanoTimestamp();
         const elapsed_ns = end - start;
-        const throughput = (size * 1_000_000_000) / @as(usize, @intCast(elapsed_ns));
+        const throughput = (size * 1_000_000_000) / @as(u64, @intCast(elapsed_ns));
         
         try testing.expectEqual(size, count);
         // Performance assertion: should process at least 1MB/sec
@@ -656,7 +656,7 @@
         
         const end = std.time.nanoTimestamp();
         const elapsed_ns = end - start;
-        const ops_per_sec = (iterations * 1_000_000_000) / @as(usize, @intCast(elapsed_ns));
+        const ops_per_sec = (iterations * 1_000_000_000) / @as(u64, @intCast(elapsed_ns));
         
         // Performance assertion: should handle at least 1M peeks/sec
         try testing.expect(ops_per_sec > 1_000_000);
@@ -686,7 +686,7 @@
         
         const end = std.time.nanoTimestamp();
         const elapsed_ns = end - start;
-        const ops_per_sec = (cycles * 150 * 1_000_000_000) / @as(usize, @intCast(elapsed_ns));
+        const ops_per_sec = (cycles * 150 * 1_000_000_000) / @as(u64, @intCast(elapsed_ns));
         
         // Performance assertion: should handle at least 100K ops/sec
         try testing.expect(ops_per_sec > 100_000);
