@@ -1,0 +1,9 @@
+ASCII Test File
+===============
+This file contains only ASCII characters (0-127).
+Numbers: 0123456789
+Uppercase: ABCDEFGHIJKLMNOPQRSTUVWXYZ
+Lowercase: abcdefghijklmnopqrstuvwxyz
+Symbols: !@#$%^&*()_+-=[]{}|;':",./<>?`~
+Control chars: tab and newline
+are also ASCII.

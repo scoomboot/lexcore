@@ -138,7 +138,7 @@ MIT License - see [LICENSE](LICENSE) file for details.
 
 ## Author
 
-Developed with ❤️ by [scoomboot](https://github.com/scoomboot)
+Vibe coded with ❤️ by [scoomboot](https://github.com/scoomboot)
 
 ## Links
 

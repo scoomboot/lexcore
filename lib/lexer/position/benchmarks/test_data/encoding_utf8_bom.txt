@@ -1,0 +1,11 @@
+﻿UTF-8 with BOM Test
+===================
+Latin: café, naïve, résumé
+Greek: Α α, Β β, Γ γ, Δ δ, Ε ε
+Cyrillic: А а, Б б, В в, Г г, Д д
+Chinese: 你好世界 (Hello World)
+Japanese: こんにちは世界 (Konnichiwa sekai)
+Korean: 안녕하세요 세계 (Annyeonghaseyo segye)
+Arabic: مرحبا بالعالم (Marhaban bil'alam)
+Hebrew: שלום עולם (Shalom olam)
+Emoji: 😀 😃 😄 😁 🎉 🚀 ❤️ ✨

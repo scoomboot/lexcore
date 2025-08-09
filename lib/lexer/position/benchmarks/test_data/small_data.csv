@@ -1,0 +1,11 @@
+id,name,age,city,country,occupation,salary
+1,"Alice Smith",28,"New York","USA","Software Engineer",95000
+2,"Bob Johnson",35,"London","UK","Data Scientist",85000
+3,"Charlie Lee",42,"Tokyo","Japan","Product Manager",110000
+4,"Diana Garcia",31,"Barcelona","Spain","UX Designer",75000
+5,"Eve Wilson",29,"Sydney","Australia","DevOps Engineer",90000
+6,"Frank Chen",38,"Shanghai","China","Technical Lead",105000
+7,"Grace Kim",26,"Seoul","South Korea","Frontend Developer",70000
+8,"Henry Brown",45,"Toronto","Canada","CTO",150000
+9,"Iris Martinez",33,"Mexico City","Mexico","Backend Developer",80000
+10,"Jack Taylor",27,"Berlin","Germany","QA Engineer",65000

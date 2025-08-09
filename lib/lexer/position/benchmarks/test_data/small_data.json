@@ -1,0 +1,15 @@
+{
+  "name": "LexCore",
+  "version": "0.1.0",
+  "description": "High-performance lexer library",
+  "author": "scoomboot",
+  "dependencies": {
+    "std": "0.13.0"
+  },
+  "tags": ["lexer", "parser", "performance", "zig"],
+  "metrics": {
+    "lines": 1234,
+    "coverage": 95.7,
+    "benchmarks": true
+  }
+}

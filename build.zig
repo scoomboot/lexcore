@@ -76,6 +76,95 @@
 
         const run_exe_tests     = b.addRunArtifact(exe_tests);
         test_step.dependOn(&run_exe_tests.step);
+
+        // Benchmarks
+        const bench_step        = b.step("bench", "Run all benchmarks");
+
+        // Main benchmark runner
+        const bench_exe         = b.addExecutable(.{
+            .name               = "benchmark",
+            .root_source_file   = b.path("lib/lexer/position/benchmarks/main.zig"),
+            .target             = target,
+            .optimize           = .ReleaseFast, // Always use ReleaseFast for benchmarks
+        });
+
+        // Add the library module to the benchmark executable so it can access lexer components
+        bench_exe.root_module.addImport("lexcore", lib_mod);
+
+        const run_bench         = b.addRunArtifact(bench_exe);
+        bench_step.dependOn(&run_bench.step);
+
+        // Position-specific benchmarks
+        const bench_position_step = b.step("bench-position", "Run position benchmarks only");
+        const position_bench_exe = b.addExecutable(.{
+            .name               = "position_benchmark",
+            .root_source_file   = b.path("lib/lexer/position/benchmarks/position_benchmark.zig"),
+            .target             = target,
+            .optimize           = .ReleaseFast,
+        });
+
+        position_bench_exe.root_module.addImport("lexcore", lib_mod);
+
+        const run_position_bench = b.addRunArtifact(position_bench_exe);
+        bench_position_step.dependOn(&run_position_bench.step);
+
+        // Buffer-specific benchmarks
+        const bench_buffer_step = b.step("bench-buffer", "Run buffer benchmarks only");
+        const buffer_bench_exe  = b.addExecutable(.{
+            .name               = "buffer_benchmark",
+            .root_source_file   = b.path("lib/lexer/position/benchmarks/buffer_benchmark.zig"),
+            .target             = target,
+            .optimize           = .ReleaseFast,
+        });
+
+        buffer_bench_exe.root_module.addImport("lexcore", lib_mod);
+
+        const run_buffer_bench  = b.addRunArtifact(buffer_bench_exe);
+        bench_buffer_step.dependOn(&run_buffer_bench.step);
+
+        // Scenario benchmarks
+        const bench_scenarios_step = b.step("bench-scenarios", "Run scenario benchmarks only");
+        
+        // Small file scenario
+        const small_file_exe    = b.addExecutable(.{
+            .name               = "small_file_benchmark",
+            .root_source_file   = b.path("lib/lexer/position/benchmarks/scenarios/small_file.zig"),
+            .target             = target,
+            .optimize           = .ReleaseFast,
+        });
+
+        small_file_exe.root_module.addImport("lexcore", lib_mod);
+
+        const run_small_file    = b.addRunArtifact(small_file_exe);
+        
+        // Medium file scenario
+        const medium_file_exe   = b.addExecutable(.{
+            .name               = "medium_file_benchmark",
+            .root_source_file   = b.path("lib/lexer/position/benchmarks/scenarios/medium_file.zig"),
+            .target             = target,
+            .optimize           = .ReleaseFast,
+        });
+
+        medium_file_exe.root_module.addImport("lexcore", lib_mod);
+
+        const run_medium_file   = b.addRunArtifact(medium_file_exe);
+        
+        // Large file scenario
+        const large_file_exe    = b.addExecutable(.{
+            .name               = "large_file_benchmark",
+            .root_source_file   = b.path("lib/lexer/position/benchmarks/scenarios/large_file.zig"),
+            .target             = target,
+            .optimize           = .ReleaseFast,
+        });
+
+        large_file_exe.root_module.addImport("lexcore", lib_mod);
+
+        const run_large_file    = b.addRunArtifact(large_file_exe);
+        
+        // Add all scenarios to the scenarios step
+        bench_scenarios_step.dependOn(&run_small_file.step);
+        bench_scenarios_step.dependOn(&run_medium_file.step);
+        bench_scenarios_step.dependOn(&run_large_file.step);
     }
 
 // ╚══════════════════════════════════════════════════════════════════════════════════════╝

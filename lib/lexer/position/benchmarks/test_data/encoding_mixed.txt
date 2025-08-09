@@ -1,0 +1,9 @@
+Mixed Encoding Test
+===================
+Line 1: Pure ASCII text
+Line 2: Café résumé naïve (Latin extended)
+Line 3: Mathematical: ∑ ∏ ∫ ∂ ∇ ∞ ≈ ≠ ≤ ≥
+Line 4: Emoji party: 🎉 🎊 🎈 🎁 🎂 🍰
+Line 5: Box drawing: ┌─┬─┐ │ │ │ ├─┼─┤ │ │ │ └─┴─┘
+Line 6: Currency: $ € £ ¥ ₹ ₽ ¢
+Line 7: Back to ASCII
