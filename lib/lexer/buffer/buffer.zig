@@ -414,6 +414,7 @@
     /// Supports incremental reading and maintains a sliding window over the input
     pub const StreamingBuffer = struct {
         allocator: std.mem.Allocator,
+        file: std.fs.File,     // File handle for seeking support
         reader: std.fs.File.Reader,
         window: []u8,
         window_size: usize,
@@ -424,6 +425,7 @@
         eof_reached: bool,
         position_tracker: ?*PositionTracker,  // Optional position tracking
         marked_source_position: ?Position,    // Saved position for mark/restore
+        mark: ?usize,          // Absolute file position when marked
         
         /// Initialize streaming buffer with a file reader
         pub fn init(allocator: std.mem.Allocator, file: std.fs.File, window_size: usize) !StreamingBuffer {
@@ -435,6 +437,7 @@
             
             var buffer = StreamingBuffer{
                 .allocator = allocator,
+                .file = file,
                 .reader = file.reader(),
                 .window = window,
                 .window_size = window_size,
@@ -445,6 +448,7 @@
                 .eof_reached = false,
                 .position_tracker = null,
                 .marked_source_position = null,
+                .mark = null,
             };
             
             // Initial fill
@@ -619,6 +623,73 @@
             }
         }
         
+        /// Seek to a specific position in the file and refill the window
+        fn seekAndRefill(self: *StreamingBuffer, target_position: usize) !void {
+            // Validate target position
+            if (self.file_size) |size| {
+                if (target_position > size) {
+                    return error.InvalidPosition;
+                }
+            }
+            
+            // Calculate the ideal window start position
+            // We want to center the target position in the window when possible
+            var new_window_start: usize = 0;
+            if (target_position > self.window_size / 2) {
+                new_window_start = target_position - (self.window_size / 2);
+            }
+            
+            // Adjust window start if it would extend past EOF
+            if (self.file_size) |size| {
+                if (new_window_start + self.window_size > size) {
+                    // Position window so it ends at EOF
+                    new_window_start = if (size > self.window_size) size - self.window_size else 0;
+                }
+            }
+            
+            // Ensure target position is within the new window
+            if (target_position < new_window_start) {
+                new_window_start = target_position;
+            }
+            
+            // Seek to the new window start position
+            try self.file.seekTo(new_window_start);
+            
+            // Reset reader to use the new file position
+            self.reader = self.file.reader();
+            
+            // Update window metadata
+            self.window_start = new_window_start;
+            self.position = target_position - new_window_start;
+            self.valid_bytes = 0;
+            self.eof_reached = false;
+            
+            // Refill the window from the new position
+            const bytes_read = try self.reader.read(self.window);
+            self.valid_bytes = bytes_read;
+            
+            // Check for EOF
+            if (bytes_read == 0) {
+                self.eof_reached = true;
+                if (target_position > new_window_start) {
+                    return error.InvalidPosition;
+                }
+            } else if (self.file_size) |size| {
+                if (new_window_start + bytes_read >= size) {
+                    self.eof_reached = true;
+                }
+            }
+            
+            // Validate that target position is within valid data
+            // Allow position at EOF (position == valid_bytes) for marking at EOF
+            if (self.position > self.valid_bytes) {
+                return error.InvalidPosition;
+            }
+            
+            // Note: Position tracking state is preserved from marked_source_position
+            // and will be restored by the calling restoreMark() method
+        }
+        
         /// Peek at current byte without advancing
         pub fn peek(self: *StreamingBuffer) !u8 {
             // Need to slide window if we're at or past the valid data boundary
@@ -653,9 +724,8 @@
         
         /// Mark current position for later restoration
         pub fn markPosition(self: *StreamingBuffer) void {
-            // For StreamingBuffer, we need to track both window position and absolute position
-            // Store the current position within the window
-            // Note: This simple implementation doesn't handle window sliding between mark and restore
+            // Store the absolute file position
+            self.mark = self.window_start + self.position;
             
             // Save source position if tracking is enabled
             if (self.position_tracker) |tracker| {
@@ -664,14 +734,30 @@
         }
         
         /// Restore previously marked position
-        /// Note: This is limited for StreamingBuffer - can only restore within current window
+        /// Supports restoration to any position in the file, including positions outside the current window
         pub fn restoreMark(self: *StreamingBuffer) !void {
-            // Restore source position if tracking is enabled
-            if (self.position_tracker) |tracker| {
-                if (self.marked_source_position) |source_pos| {
-                    tracker.current = source_pos;
-                    self.marked_source_position = null;
+            if (self.mark) |marked_pos| {
+                // Check if marked position is within the current window
+                if (marked_pos >= self.window_start and marked_pos < self.window_start + self.valid_bytes) {
+                    // Simple restore within current window
+                    self.position = marked_pos - self.window_start;
+                } else {
+                    // Need to seek to the marked position and refill the window
+                    try self.seekAndRefill(marked_pos);
                 }
+                
+                // Restore source position if tracking is enabled
+                if (self.position_tracker) |tracker| {
+                    if (self.marked_source_position) |source_pos| {
+                        tracker.current = source_pos;
+                    }
+                }
+                
+                // Clear the mark
+                self.mark = null;
+                self.marked_source_position = null;
+            } else {
+                return error.NoMarkSet;
             }
         }
         
@@ -777,6 +863,7 @@
         _ = @import("streaming_test.zig");
         _ = @import("position_integration_test.zig");
         _ = @import("streaming_position_test.zig");
+        _ = @import("mark_restore_test.zig");
     }
 
 // ╚══════════════════════════════════════════════════════════════════════════════════════╝
